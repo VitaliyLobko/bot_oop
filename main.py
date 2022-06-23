@@ -1,4 +1,6 @@
 import datetime
+import pickle
+from pathlib import Path
 from collections import UserDict
 from datetime import date
 
@@ -35,8 +37,11 @@ class Phone(Field):
 
     @value.setter
     def value(self, value: str):
+
         def is_code_valid(phone_code: str) -> bool:
+            if phone_code[:2] in ('03', '04', '05', '06', '09')  and phone_code != '039':
                 return True
+            return False
 
         result = None
         phone = value.removeprefix('+').replace('(', '').replace(')', '').replace('-', '')
@@ -84,7 +89,7 @@ class Record:
         self.birthday = birthday
 
     def __str__(self) -> str:
-        return f' User \033[35m{self.name.value:20}\033[0m - Birthday {self.birthday}\n' \
+        return f' User \033[1;32m{self.name.value:20}\033[0m - Birthday {self.birthday}  \033[1;31m({self.days_to_birthday(self.birthday)} day)\033[0m\n' \
                f'     Phones: {", ".join([phone.value for phone in self.phone_list])}'
 
     def add_phone(self, phone: Phone) -> None:
@@ -108,13 +113,24 @@ class Record:
 
 
 class AddressBook(UserDict):
+    def __init__(self, filename: str) -> None:
+        super().__init__()  # виклик базового конструктора
+        self.filename = Path(filename)
+        if self.filename.exists():
+            with open(self.filename, 'rb') as db:
+                self.data = pickle.load(db)
+
+    def save(self):
+        with open(self.filename, 'wb') as db:
+            pickle.dump(self.data, db)
+
     def add_record(self, record: Record) -> None:
         self.data[record.name.value] = record
 
-    def iterator(self, days=0):
+    def iterator(self, func=None, days=0):
         index, print_block = 1, '-' * 50 + '\n'
         for record in self.data.values():
-            if days == 0 or (record.birthday.value is not None and record.days_to_birthday(record.birthday) <= days):
+            if func is None or func(record):
                 print_block += str(record) + '\n'
                 if index < N:
                     index += 1
@@ -221,15 +237,19 @@ def days_to_user_birthday(contacts, *args):
 
 
 def show_birthday(contacts, *args):
+    def func_days(record):
+        return record.birthday.value is not None and record.days_to_birthday(record.birthday) <= days
+
     days = int(args[0])
     result = f'List of users with birthday in {days} days:\n'
-    print_list = contacts.iterator(days)
+    print_list = contacts.iterator(func_days)
     for item in print_list:
         result += f'{item}'
     return result
 
 
-def goodbye(*args):
+def goodbye(contacts, *args):
+    contacts.save()
     return 'Good bye!'
 
 
@@ -237,9 +257,37 @@ def unknown_command(*args):
     return 'Unknown command! Enter again!'
 
 
-def verify_phone(phone: Phone):
-    new_phone = phone.value.removeprefix('+').replace('(', '').replace(')', '').replace('-', '')
-    return str(int(new_phone))
+def search(contacts, *args):
+    def func_sub(record):
+        return substring.lower() in record.name.value.lower() or \
+               any(substring in phone.value for phone in record.phone_list) or \
+               (record.birthday.value is not None and substring in record.birthday.value.strftime('%d.%m.%Y'))
+    substring = args[0]
+    result = f'List of users with \'{substring.lower()}\' in data:\n'
+    print_list = contacts.iterator(func_sub)
+    for item in print_list:
+        result += f'{item}'
+    return result
+
+
+@InputError
+def del_user(contacts, *args):
+    name = args[0]
+    yes_no = input(f'Are you sure you want to delete the user {name}? (Y/n) ')
+    if yes_no == 'Y':
+        del contacts[name]
+        return f'Delete user {name}'
+    else:
+        return 'User not deleted'
+
+
+def clear_all(contacts, *args):
+    yes_no = input('Are you sure you want to delete all users? (Y/n) ')
+    if yes_no == 'Y':
+        contacts.clear()
+        return 'Address book is empty'
+    else:
+        return 'Removal canceled'
 
 
 def help_me(*args):
@@ -249,9 +297,12 @@ def help_me(*args):
     add name phone [birthday] - add user to directory;
     change name old_phone new_phone - change the user's phone number;
     del name phone - delete the user's phone number;
+    delete name - delete the user;
+    clear - delete all users;
     birthday name birthday - add/modify the user's birthday;
     show name - show the user's data;
     show all - show data of all users;
+    find or search sub - show data of all users with sub in name, phones or birthday;
     days to birthday name - show how many days to the user's birthday;
     show birthday days N - show the user's birthday in the next N days;
     good bye or close or exit or . - exit the program"""
@@ -260,7 +311,8 @@ def help_me(*args):
 COMMANDS = {salute: ['hello'], add_contact: ['add '], change_contact: ['change '], help_me: ['?', 'help'],
             show_all: ['show all'], goodbye: ['good bye', 'close', 'exit', '.'], del_phone: ['del '],
             add_birthday: ['birthday'], days_to_user_birthday: ['days to birthday '],
-            show_birthday: ['show birthday days '], show_phone: ['show ']}
+            show_birthday: ['show birthday days '], show_phone: ['show '], search: ['find ', 'search '],
+            del_user: ['delete '], clear_all: ['clear']}
 
 
 def command_parser(user_command: str) -> (str, list):
@@ -275,7 +327,7 @@ def command_parser(user_command: str) -> (str, list):
 
 
 def main():
-    contacts = AddressBook()
+    contacts = AddressBook(filename='contacts.dat')
     while True:
         user_command = input('Enter command >>> ')
         command, data = command_parser(user_command)

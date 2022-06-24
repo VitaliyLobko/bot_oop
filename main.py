@@ -89,8 +89,8 @@ class Record:
         self.birthday = birthday
 
     def __str__(self) -> str:
-        return f' User \033[1;32m{self.name.value:20}\033[0m - Birthday {self.birthday}  \033[1;31m({self.days_to_birthday(self.birthday)} day)\033[0m\n' \
-               f'     Phones: {", ".join([phone.value for phone in self.phone_list])}'
+        return f'User \033[1;32m{self.name.value:20}\033[0m - Birthday {self.birthday}  \033[1;31m({self.days_to_birthday(self.birthday)} day)\033[0m\n' \
+               f'Phones: {", ".join([phone.value for phone in self.phone_list])}'
 
     def add_phone(self, phone: Phone) -> None:
         self.phone_list.append(phone)
